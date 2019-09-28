@@ -1,18 +1,16 @@
-#CC = /opt/gcc-8.1.0/bin/gcc-8.1.0
-#CXX = /opt/gcc-8.1.0/bin/g++-8.1.0
-
-#ALL_PROGS = v4l2copy v4l2convert_yuv v4l2source_yuv v4l2dump
-CFLAGS = -W -Wall -pthread -g -pipe $(CFLAGS_EXTRA) -I include -ljpeg
+ALL_PROGS = v4l2copy v4l2convert_yuv v4l2source_yuv v4l2dump
+CFLAGS = -W -Wall -pthread -g -pipe $(CFLAGS_EXTRA) -I include
 RM = rm -rf
 CC = $(CROSS)gcc
 CXX = $(CROSS)g++
 PREFIX?=/usr
+DESTDIR?=$(PREFIX)
 
 # log4cpp
 ifneq ($(wildcard $(SYSROOT)$(PREFIX)/include/log4cpp/Category.hh),)
 $(info with log4cpp)
 CFLAGS += -DHAVE_LOG4CPP -I $(SYSROOT)$(PREFIX)/include
-LDFLAGS += -llog4cpp
+LDFLAGS += -llog4cpp 
 endif
 
 # v4l2wrapper
@@ -21,31 +19,41 @@ CFLAGS += -I v4l2wrapper/inc
 .DEFAULT_GOAL := all
 
 # raspberry tools using ilclient
+ILCLIENTDIR=/opt/vc/src/hello_pi/libs/ilclient
+ifneq ($(wildcard $(ILCLIENTDIR)),)
+ILCFLAGS = $(CFLAGS) -I/opt/vc/include/ -I/opt/vc/include/interface/vcos/ -I/opt/vc/include/interface/vcos/pthreads/ -I/opt/vc/include/interface/vmcs_host/linux/ -I$(ILCLIENTDIR)
+ILCFLAGS += -DOMX_SKIP64BIT
+ILLDFLAGS = $(LDFLAGS) -L/opt/vc/lib -L$(ILCLIENTDIR) -lpthread -lopenmaxil -lbcm_host -lvcos -lvchiq_arm
 
-#ifneq ($(HAVE_RPI),)
-#CFLAGS  += -DOMX_SKIP64BIT
+v4l2compress_omx: src/encode_omx.cpp src/v4l2compress_omx.cpp $(ILCLIENTDIR)/libilclient.a libv4l2wrapper.a 
+	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(ILCFLAGS) $(ILLDFLAGS) 
+
+v4l2grab_h264: src/encode_omx.cpp src/v4l2grab_h264.cpp $(ILCLIENTDIR)/libilclient.a libv4l2wrapper.a
+	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(ILCFLAGS) $(ILLDFLAGS) 
+
+v4l2display_h264: src/v4l2display_h264.cpp $(ILCLIENTDIR)/libilclient.a libv4l2wrapper.a
+	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(ILCFLAGS) $(ILLDFLAGS) 
+
+
+$(ILCLIENTDIR)/libilclient.a:
+	make -C $(ILCLIENTDIR)
+	
+ALL_PROGS+=v4l2grab_h264
+ALL_PROGS+=v4l2display_h264
+ALL_PROGS+=v4l2compress_omx
+endif
+
+MMALDIR=/opt/vc/include
+ifneq ($(wildcard $(MMALDIR)),)
 MMALCAM_CFLAGS  = $(CFLAGS) -lpthread -lbcm_host -lvcos -lvchostif -lvchiq_arm
-#CFLAGS  += -lpthread -lopenmaxil -lbcm_host -lvcos -lvchostif -lvchiq_arm -lilclient
-#LDFLAGS += -L/opt/vc/lib -L$(ILCLIENTDIR) -lpthread -lopenmaxil -lbcm_host -lvcos -lvchiq_arm
-MMALCAM_LDFLAGS += -L/opt/vc/lib -lmmal -lmmal_core -lmmal_util -lpthread -lbcm_host -lvcos -lvchiq_arm
-
+MMALCAM_LDFLAGS = $(LDFLAGS) -L/opt/vc/lib -lmmal -lmmal_core -lmmal_util -lpthread -lbcm_host -lvcos -lvchiq_arm
 RASPICAM_CFLAGS = -Isrc/raspicam -I/opt/vc/include
 RASPICAM_OBJS = \
 	src/raspicam/RaspiCamControl.o \
 	src/raspicam/RaspiCLI.o \
 	src/raspicam/RaspiCommonSettings.o \
 	src/raspicam/RaspiHelpers.o \
-	src/raspicam/RaspiPreview.o \
-
-
-v4l2compress_omx: src/encode_omx.cpp src/v4l2compress_omx.cpp libv4l2wrapper.a
-	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(CFLAGS) $(LDFLAGS)
-
-v4l2grab_h264: src/encode_omx.cpp src/v4l2grab_h264.cpp libv4l2wrapper.a
-	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(CFLAGS) $(LDFLAGS)
-
-v4l2display_h264: src/v4l2display_h264.cpp libv4l2wrapper.a
-	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(CFLAGS) $(LDFLAGS)
+	src/raspicam/RaspiPreview.o
 
 v4l2multi_stream_mmal: src/v4l2multi_stream_mmal.cpp $(RASPICAM_OBJS) libv4l2wrapper.a
 	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(MMALCAM_CFLAGS) $(RASPICAM_CFLAGS) $(MMALCAM_LDFLAGS)
@@ -53,52 +61,58 @@ v4l2multi_stream_mmal: src/v4l2multi_stream_mmal.cpp $(RASPICAM_OBJS) libv4l2wra
 src/raspicam/%.o : src/raspicam/%.c
 	$(CC) -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(MMALCAM_CFLAGS) $(RASPICAM_CFLAGS) -c $< -o $@
 
-#ALL_PROGS+=v4l2grab_h264
-#ALL_PROGS+=v4l2display_h264
-#ALL_PROGS+=v4l2compress_omx
 ALL_PROGS+=v4l2multi_stream_mmal
-#endif
+
+endif
+
 
 # opencv
-#ifneq ($(wildcard /usr/include/opencv),)
-#ALL_PROGS+=v4l2detect_yuv
-#endif
+ifneq ($(wildcard /usr/include/opencv),)
+ALL_PROGS+=v4l2detect_yuv
+endif
 
 # libx264
-ifneq ($(HAVE_X264),)
+ifneq ($(wildcard /usr/include/x264.h),)
 ALL_PROGS+=v4l2compress_h264
 endif
 
 # libx265
-ifneq ($(HAVE_X265),)
+ifneq ($(wildcard /usr/include/x265.h),)
 ALL_PROGS+=v4l2compress_x265
 endif
 
 # libvpx
-ifneq ($(HAVE_LIBVPX),)
+ifneq ($(wildcard /usr/include/vpx),)
 ALL_PROGS+=v4l2compress_vpx
 endif
 
 # libjpeg
-ifneq ($(HAVE_LIBJPEG),)
+ifneq ($(wildcard /usr/include/jpeglib.h),)
 ALL_PROGS+=v4l2compress_jpeg v4l2uncompress_jpeg
 CFLAGS += -DHAVE_JPEG
+LDFLAGS += -ljpeg
 endif
 
 # libfuse
-ifneq ($(HAVE_LIBFUSE),)
+ifneq ($(wildcard /usr/include/fuse.h),)
 ALL_PROGS+=v4l2fuse
 endif
 
 all: $(ALL_PROGS)
 
 libyuv.a:
-	cd libyuv && cmake . && make
-	cp libyuv/libyuv.a .
+	git submodule init libyuv
+	git submodule update libyuv
+	cd libyuv && cmake . && make 
+	mv libyuv/libyuv.a .
+	make -C libyuv clean
 
-libv4l2wrapper.a:
-	make CC="$(CC)" CFLAGS_EXTRA="$(CFLAGS_EXTRA)" LDFLAGS="$(LDFLAGS)" -C v4l2wrapper all
-	cp v4l2wrapper/libv4l2wrapper.a .
+libv4l2wrapper.a: 
+	git submodule init v4l2wrapper
+	git submodule update v4l2wrapper
+	make -C v4l2wrapper
+	mv v4l2wrapper/libv4l2wrapper.a .
+	make -C v4l2wrapper clean
 
 # read V4L2 capture -> write V4L2 output
 v4l2copy: src/v4l2copy.cpp  libv4l2wrapper.a
@@ -131,36 +145,39 @@ v4l2compress_jpeg: src/v4l2compress_jpeg.cpp libyuv.a  libv4l2wrapper.a
 # read V4L2 capture -> uncompress using libjpeg -> write V4L2 output
 v4l2uncompress_jpeg: src/v4l2uncompress_jpeg.cpp libyuv.a  libv4l2wrapper.a
 	$(CXX) -o $@ $(CFLAGS) $^ $(LDFLAGS) -ljpeg -I libyuv/include
-
+	
 # try with opencv
 v4l2detect_yuv: src/v4l2detect_yuv.cpp libyuv.a  libv4l2wrapper.a
 	$(CXX) -o $@ $(CFLAGS) $^ $(LDFLAGS) -lopencv_core -lopencv_objdetect -lopencv_imgproc -I libyuv/include
 
+# dump
 h264bitstream/Makefile:
-	cd h264bitstream && autoreconf -i -f && ./configure --host $(shell $(CC) -dumpmachine)
+	git submodule update --init h264bitstream	
 
 h264bitstream/.libs/libh264bitstream.so: h264bitstream/Makefile
-	make CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" -C h264bitstream
+	cd h264bitstream && autoreconf -i -f && ./configure --host $(shell $(CC) -dumpmachine)
+	make -C h264bitstream 
 
 hevcbitstream/Makefile:
-	cd hevcbitstream && autoreconf -i -f && LDFLAGS=-lm ./configure --host $(shell $(CC) -dumpmachine)
+	git submodule update --init hevcbitstream	
 
 hevcbitstream/.libs/libhevcbitstream.so: hevcbitstream/Makefile
-	make CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" -C hevcbitstream
+	cd hevcbitstream && autoreconf -i -f && LDFLAGS=-lm ./configure --host $(shell $(CC) -dumpmachine)
+	make -C hevcbitstream 
 
 v4l2dump: src/v4l2dump.cpp libv4l2wrapper.a h264bitstream/.libs/libh264bitstream.so  hevcbitstream/.libs/libhevcbitstream.so libyuv.a
-	$(CXX) -o $@ $(CFLAGS) $^ $(LDFLAGS) -Ih264bitstream  -Ihevcbitstream -Wl,-rpath=./h264bitstream/.libs,-rpath=./hevcbitstream/.libs -I libyuv/include
+	$(CXX) -o $@ $(CFLAGS) $^ $(LDFLAGS) -Ih264bitstream  -Ihevcbitstream -Wl,-rpath=./h264bitstream/.libs,-rpath=./hevcbitstream/.libs -I libyuv/include 
 
-v4l2fuse: src/v4l2fuse.c
+v4l2fuse: src/v4l2fuse.c 
 	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -D_FILE_OFFSET_BITS=64 -lfuse
 
+	
+upgrade:
+	git submodule foreach git pull origin master
+	
 install: all
-	mkdir -p $(PREFIX)/bin
-	install -D -m 0755 $(ALL_PROGS) $(PREFIX)/bin
+	mkdir -p $(DESTDIR)/bin
+	install -D -m 0755 $(ALL_PROGS) $(DESTDIR)/bin
 
 clean:
 	-@$(RM) $(ALL_PROGS) .*o *.a src/raspicam/.*o
-	make CC="$(CC)" -C libyuv clean
-	make CC="$(CC)" -C h264bitstream clean
-	make CC="$(CC)" -C hevcbitstream clean
-	make CC="$(CC)" -C v4l2wrapper clean
