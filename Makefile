@@ -45,8 +45,8 @@ endif
 
 MMALDIR=/opt/vc/include
 ifneq ($(wildcard $(MMALDIR)),)
-MMALCAM_CFLAGS  = $(CFLAGS) -lpthread -lbcm_host -lvcos -lvchostif -lvchiq_arm
-MMALCAM_LDFLAGS = $(LDFLAGS) -L/opt/vc/lib -lmmal -lmmal_core -lmmal_util -lpthread -lbcm_host -lvcos -lvchiq_arm
+MMALCAM_CFLAGS  = $(CFLAGS)
+MMALCAM_LDFLAGS = $(LDFLAGS) -L/opt/vc/lib -lmmal -lmmal_core -lmmal_util -lpthread -lbcm_host -lvcos -lvchostif -lvchiq_arm
 RASPICAM_CFLAGS = -Isrc/raspicam -I/opt/vc/include
 RASPICAM_OBJS = \
 	src/raspicam/RaspiCamControl.o \
