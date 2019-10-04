@@ -47,7 +47,7 @@ MMALDIR=/opt/vc/include
 ifneq ($(wildcard $(MMALDIR)),)
 MMALCAM_CFLAGS  = $(CFLAGS)
 MMALCAM_LDFLAGS = $(LDFLAGS) -L/opt/vc/lib -lmmal -lmmal_core -lmmal_util -lpthread -lbcm_host -lvcos -lvchostif -lvchiq_arm
-RASPICAM_CFLAGS = -Isrc/raspicam -I/opt/vc/include
+RASPICAM_CFLAGS = $(CFLAGS) -Isrc/raspicam -I/opt/vc/include
 RASPICAM_OBJS = \
 	src/raspicam/RaspiCamControl.o \
 	src/raspicam/RaspiCLI.o \
@@ -59,7 +59,7 @@ v4l2multi_stream_mmal: src/v4l2multi_stream_mmal.cpp $(RASPICAM_OBJS) libv4l2wra
 	$(CXX) -o $@ $^ -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(MMALCAM_CFLAGS) $(RASPICAM_CFLAGS) $(MMALCAM_LDFLAGS)
 
 src/raspicam/%.o : src/raspicam/%.c
-	$(CC) -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(MMALCAM_CFLAGS) $(RASPICAM_CFLAGS) -c $< -o $@
+	$(CC) -DHAVE_LIBBCM_HOST -DUSE_EXTERNAL_LIBBCM_HOST -DUSE_VCHIQ_ARM -Wno-psabi $(RASPICAM_CFLAGS) -c $< -o $@
 
 ALL_PROGS+=v4l2multi_stream_mmal
 
