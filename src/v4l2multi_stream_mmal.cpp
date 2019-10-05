@@ -5,7 +5,16 @@
 **
 ** v4l2multi_stream_mmal.cpp
 **
-** Read YUV420 from a V4L2 capture -> compress in H264 using OMX -> write to a V4L2 output device
+** Sets up GPU pipeline that grabs frames from Pi Camera and writes H264 video
+** stream to a V4L2 loopback device, and writes MJPEG to a file or stdout.
+**
+** Pi Camera Preview Port ---> ISP (resizer) ---> MJPEG Encoder ---> File (stdout)
+** Pi Camera Video Port ---> H264 Enoder ---> V4L2 Loopback Device
+**
+** Author: Joo Saw
+**
+** Inspired by raspivid. Most functions and files are copied from raspicam suite
+** to simplify maintenance.
 **
 ** -------------------------------------------------------------------------*/
 
@@ -41,16 +50,10 @@ extern "C"
 #include "RaspiPreview.h"
 #include "RaspiCLI.h"
 #include "RaspiHelpers.h"
-//#include "RaspiGPS.h"
 }
 
-//#include "logger.h"
-
 #include "V4l2Device.h"
-//#include "V4l2Capture.h"
 #include "V4l2Output.h"
-
-//#include "encode_omx.h"
 
 // Standard port setting for the camera component
 #define MMAL_CAMERA_PREVIEW_PORT 0
@@ -133,8 +136,8 @@ struct MMALCAM_STATE_S
    MMAL_FOURCC_T video_encoding;       /// Requested codec video encoding (MJPEG or H264)
    MMAL_FOURCC_T mjpeg_encoding;       /// Requested codec video encoding (MJPEG or H264)
    MMAL_FOURCC_T still_encoding;       /// Encoding to use for the output file.
-   int jpeg_quality;                   /// JPEG quality setting (1-100)
-   int jpeg_restart_interval;          /// JPEG restart interval. 0 for none.
+   //int jpeg_quality;                   /// JPEG quality setting (1-100)
+   //int jpeg_restart_interval;          /// JPEG restart interval. 0 for none.
    MMAL_PARAM_THUMBNAIL_CONFIG_T thumbnailConfig; // JPEG thumbnail
    int mjpeg_width;                    /// Requested MJPEG width
    int mjpeg_height;                   /// Requested MJPEG height
@@ -279,7 +282,7 @@ static int intra_refresh_map_size = sizeof(intra_refresh_map) / sizeof(intra_ref
 enum
 {
    CommandV4L2LoopbackDev,
-   CommandQuality,
+   //CommandQuality,
    CommandBitrate,
    CommandMjpegBitrate,
    CommandMjpegFramerate,
@@ -313,13 +316,13 @@ enum
    //CommandNetListen,
    CommandSPSTimings,
    //CommandSlices,
-   CommandRestartInterval,
+   //CommandRestartInterval,
 };
 
 static COMMAND_LIST cmdline_commands[] =
 {
    { CommandV4L2LoopbackDev, "-videoout", "vo", "V4L2Loopback device for video output (default /dev/video90)", 1 },
-   { CommandQuality,       "-quality",    "q",  "Set jpeg quality <0 to 100>", 1 },
+   //{ CommandQuality,       "-quality",    "q",  "Set jpeg quality <0 to 100>", 1 },
    { CommandBitrate,       "-bitrate",    "b",  "Set bitrate. Use bits per second (e.g. 10MBits/s would be -b 10000000)", 1 },
    { CommandMjpegBitrate,  "-mjpegbitrate", "mjb", "Set MJPEG bitrate. Use bits per second (e.g. 10MBits/s would be -b 10000000)", 1 },
    { CommandMjpegFramerate,"-mjpegframerate", "mjfps","Specify the MJPEG frames per second to record", 1},
@@ -353,7 +356,7 @@ static COMMAND_LIST cmdline_commands[] =
    //{ CommandNetListen,     "-listen",     "l", "Listen on a TCP socket", 0},
    { CommandSPSTimings,    "-spstimings",    "stm", "Add in h.264 sps timings", 0},
    //{ CommandSlices   ,     "-slices",     "sl", "Horizontal slices per frame. Default 1 (off)", 1},
-   { CommandRestartInterval, "-restart","rs","JPEG Restart interval (default of 0 for none)", 1},
+   //{ CommandRestartInterval, "-restart","rs","JPEG Restart interval (default of 0 for none)", 1},
 };
 
 static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_commands[0]);
@@ -379,9 +382,9 @@ static void default_status(MMALCAM_STATE *state)
 
    // Now set anything non-zero
    state->v4l2loopback_dev = "/dev/video90";
-   state->jpeg_quality = 85;
+   //state->jpeg_quality = 85;
    state->still_encoding = MMAL_ENCODING_JPEG;
-   state->jpeg_restart_interval = 0;
+   //state->jpeg_restart_interval = 0;
    state->thumbnailConfig.enable = 0;
    state->thumbnailConfig.width = 64;
    state->thumbnailConfig.height = 48;
@@ -998,16 +1001,16 @@ static int parse_cmdline(int argc, const char **argv, MMALCAM_STATE *state)
          break;
       }
 
-      case CommandRestartInterval:
-      {
-         if (sscanf(argv[i + 1], "%u", &state->jpeg_restart_interval) == 1)
-         {
-            i++;
-         }
-         else
-            valid = 0;
-         break;
-      }
+      //case CommandRestartInterval:
+      //{
+      //   if (sscanf(argv[i + 1], "%u", &state->jpeg_restart_interval) == 1)
+      //   {
+      //      i++;
+      //   }
+      //   else
+      //      valid = 0;
+      //   break;
+      //}
 
       default:
       {
@@ -1724,7 +1727,8 @@ static MMAL_STATUS_T create_video_encoder_component(MMALCAM_STATE *state)
 
    //encoder_output->buffer_size = encoder_output->buffer_size_recommended << 1;
    encoder_output->buffer_size = 256<<10;
-   fprintf(stderr, "h264 buffer size: %u\n", encoder_output->buffer_size);
+   if (state->common_settings.verbose)
+      fprintf(stderr, "h264 buffer size: %u\n", encoder_output->buffer_size);
 
    if (encoder_output->buffer_size < encoder_output->buffer_size_min)
       encoder_output->buffer_size = encoder_output->buffer_size_min;
@@ -1736,7 +1740,8 @@ static MMAL_STATUS_T create_video_encoder_component(MMALCAM_STATE *state)
 #endif
    if (encoder_output->buffer_num < encoder_output->buffer_num_min)
       encoder_output->buffer_num = encoder_output->buffer_num_min;
-   fprintf(stderr, "h264 num buffer: %u\n", encoder_output->buffer_num);
+   if (state->common_settings.verbose)
+      fprintf(stderr, "h264 num buffer: %u\n", encoder_output->buffer_num);
 
    // We need to set the frame rate on output to 0, to ensure it gets
    // updated correctly from the input framerate when port connected
@@ -2056,7 +2061,8 @@ static MMAL_STATUS_T create_mjpeg_encoder_component(MMALCAM_STATE *state)
       encoder_output->buffer_size = encoder_output->buffer_size_recommended;
    else
       encoder_output->buffer_size = 256<<10;
-   fprintf(stderr, "mjpeg buffer size: %u\n", encoder_output->buffer_size);
+   if (state->common_settings.verbose)
+      fprintf(stderr, "mjpeg buffer size: %u\n", encoder_output->buffer_size);
 
    if (encoder_output->buffer_size < encoder_output->buffer_size_min)
       encoder_output->buffer_size = encoder_output->buffer_size_min;
@@ -2065,7 +2071,8 @@ static MMAL_STATUS_T create_mjpeg_encoder_component(MMALCAM_STATE *state)
 
    if (encoder_output->buffer_num < encoder_output->buffer_num_min)
       encoder_output->buffer_num = encoder_output->buffer_num_min;
-   fprintf(stderr, "mjpeg num buffer: %u\n", encoder_output->buffer_num);
+   if (state->common_settings.verbose)
+      fprintf(stderr, "mjpeg num buffer: %u\n", encoder_output->buffer_num);
 
    // We need to set the frame rate on output to 0, to ensure it gets
    // updated correctly from the input framerate when port connected
@@ -2084,197 +2091,10 @@ static MMAL_STATUS_T create_mjpeg_encoder_component(MMALCAM_STATE *state)
       return status;
    }
 
-   // Set the rate control parameter
-   if (0)
-   {
-      MMAL_PARAMETER_VIDEO_RATECONTROL_T param = {{ MMAL_PARAMETER_RATECONTROL, sizeof(param)}, MMAL_VIDEO_RATECONTROL_DEFAULT};
-      status = mmal_port_parameter_set(encoder_output, &param.hdr);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set ratecontrol");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-
-   }
-
-   if (state->mjpeg_encoding == MMAL_ENCODING_H264 &&
-         state->intraperiod != -1)
-   {
-      MMAL_PARAMETER_UINT32_T param = {{ MMAL_PARAMETER_INTRAPERIOD, sizeof(param)}, state->intraperiod};
-      status = mmal_port_parameter_set(encoder_output, &param.hdr);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set intraperiod");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-   }
-
-   if (state->mjpeg_encoding == MMAL_ENCODING_H264 && state->slices > 1 && state->common_settings.width <= 1280)
-   {
-      int frame_mb_rows = VCOS_ALIGN_UP(state->common_settings.height, 16) >> 4;
-
-      if (state->slices > frame_mb_rows) //warn user if too many slices selected
-      {
-         fprintf(stderr,"H264 Slice count (%d) exceeds number of macroblock rows (%d). Setting slices to %d.\n", state->slices, frame_mb_rows, frame_mb_rows);
-         // Continue rather than abort..
-      }
-      int slice_row_mb = frame_mb_rows/state->slices;
-      if (frame_mb_rows - state->slices*slice_row_mb)
-         slice_row_mb++; //must round up to avoid extra slice if not evenly divided
-
-      status = mmal_port_parameter_set_uint32(encoder_output, MMAL_PARAMETER_MB_ROWS_PER_SLICE, slice_row_mb);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set number of slices");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-   }
-
-   if (state->mjpeg_encoding == MMAL_ENCODING_H264 &&
-       state->quantisationParameter)
-   {
-      MMAL_PARAMETER_UINT32_T param = {{ MMAL_PARAMETER_VIDEO_ENCODE_INITIAL_QUANT, sizeof(param)}, state->quantisationParameter};
-      status = mmal_port_parameter_set(encoder_output, &param.hdr);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set initial QP");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-
-      MMAL_PARAMETER_UINT32_T param2 = {{ MMAL_PARAMETER_VIDEO_ENCODE_MIN_QUANT, sizeof(param)}, state->quantisationParameter};
-      status = mmal_port_parameter_set(encoder_output, &param2.hdr);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set min QP");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-
-      MMAL_PARAMETER_UINT32_T param3 = {{ MMAL_PARAMETER_VIDEO_ENCODE_MAX_QUANT, sizeof(param)}, state->quantisationParameter};
-      status = mmal_port_parameter_set(encoder_output, &param3.hdr);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set max QP");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-   }
-
-   if (state->mjpeg_encoding == MMAL_ENCODING_H264)
-   {
-      MMAL_PARAMETER_VIDEO_PROFILE_T  param;
-      param.hdr.id = MMAL_PARAMETER_PROFILE;
-      param.hdr.size = sizeof(param);
-
-      param.profile[0].profile = (MMAL_VIDEO_PROFILE_T)state->profile;
-
-      if((VCOS_ALIGN_UP(state->common_settings.width,16) >> 4) * (VCOS_ALIGN_UP(state->common_settings.height,16) >> 4) * state->framerate > 245760)
-      {
-         if((VCOS_ALIGN_UP(state->common_settings.width,16) >> 4) * (VCOS_ALIGN_UP(state->common_settings.height,16) >> 4) * state->framerate <= 522240)
-         {
-            fprintf(stderr, "Too many macroblocks/s: Increasing H264 Level to 4.2\n");
-            state->level=MMAL_VIDEO_LEVEL_H264_42;
-         }
-         else
-         {
-            vcos_log_error("Too many macroblocks/s requested");
-            status = MMAL_EINVAL;
-            if (encoder)
-               mmal_component_destroy(encoder);
-            state->mjpeg_encoder_component = NULL;
-            return status;
-         }
-      }
-
-      param.profile[0].level = (MMAL_VIDEO_LEVEL_T)state->level;
-
-      status = mmal_port_parameter_set(encoder_output, &param.hdr);
-      if (status != MMAL_SUCCESS)
-      {
-         vcos_log_error("Unable to set H264 profile");
-         if (encoder)
-            mmal_component_destroy(encoder);
-         state->mjpeg_encoder_component = NULL;
-         return status;
-      }
-   }
-
    if (mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_VIDEO_IMMUTABLE_INPUT, state->immutableInput) != MMAL_SUCCESS)
    {
       vcos_log_error("Unable to set immutable input flag");
       // Continue rather than abort..
-   }
-
-   if (state->mjpeg_encoding == MMAL_ENCODING_H264)
-   {
-      //set INLINE HEADER flag to generate SPS and PPS for every IDR if requested
-      if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_HEADER, state->bInlineHeaders) != MMAL_SUCCESS)
-      {
-         vcos_log_error("failed to set INLINE HEADER FLAG parameters");
-         // Continue rather than abort..
-      }
-
-      //set flag for add SPS TIMING
-      if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_SPS_TIMING, state->addSPSTiming) != MMAL_SUCCESS)
-      {
-         vcos_log_error("failed to set SPS TIMINGS FLAG parameters");
-         // Continue rather than abort..
-      }
-
-      //set INLINE VECTORS flag to request motion vector estimates
-      if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_VECTORS, state->inlineMotionVectors) != MMAL_SUCCESS)
-      {
-         vcos_log_error("failed to set INLINE VECTORS parameters");
-         // Continue rather than abort..
-      }
-
-      // Adaptive intra refresh settings
-      if ( state->intra_refresh_type != -1)
-      {
-         MMAL_PARAMETER_VIDEO_INTRA_REFRESH_T  param;
-         param.hdr.id = MMAL_PARAMETER_VIDEO_INTRA_REFRESH;
-         param.hdr.size = sizeof(param);
-
-         // Get first so we don't overwrite anything unexpectedly
-         status = mmal_port_parameter_get(encoder_output, &param.hdr);
-         if (status != MMAL_SUCCESS)
-         {
-            vcos_log_warn("Unable to get existing H264 intra-refresh values. Please update your firmware");
-            // Set some defaults, don't just pass random stack data
-            param.air_mbs = param.air_ref = param.cir_mbs = param.pir_mbs = 0;
-         }
-
-         param.refresh_mode = (MMAL_VIDEO_INTRA_REFRESH_T)state->intra_refresh_type;
-
-         //if (state->intra_refresh_type == MMAL_VIDEO_INTRA_REFRESH_CYCLIC_MROWS)
-         //   param.cir_mbs = 10;
-
-         status = mmal_port_parameter_set(encoder_output, &param.hdr);
-         if (status != MMAL_SUCCESS)
-         {
-            vcos_log_error("Unable to set H264 intra-refresh values");
-            if (encoder)
-               mmal_component_destroy(encoder);
-            state->mjpeg_encoder_component = NULL;
-            return status;
-         }
-      }
    }
 
    //  Enable component
@@ -3146,20 +2966,25 @@ int main(int argc, char* argv[])
         dump_status(&state);
     }
 
+    if (state.common_settings.verbose)
+    {
 #if SUPPORT_FRAGMENTED_FRAMES
-    fprintf(stderr, "Fragmented frame is supported\n");
+        fprintf(stderr, "Fragmented frame is supported\n");
 #else
-    fprintf(stderr, "Fragmented frame is NOT supported\n");
+        fprintf(stderr, "Fragmented frame is NOT supported\n");
 #endif
 #if V4L2WRAPPER_SUPPORT_PARTIAL_WRITE
-    fprintf(stderr, "libv4l2cpp supports partial writes\n");
+        fprintf(stderr, "libv4l2cpp supports partial writes\n");
 #endif
+    }
 
     check_camera_model(state.common_settings.cameraNum);
 
     // init V4L2 output interface
     V4L2DeviceParameters outparam(state.v4l2loopback_dev, V4L2_PIX_FMT_H264, state.common_settings.width, state.common_settings.height, 0, state.common_settings.verbose);
     state.videoOutput = V4l2Output::create(outparam, ioTypeOut);
+    if (state.common_settings.verbose)
+        fprintf(stderr, "\n\n");
     if (state.videoOutput == NULL)
     {
         vcos_log_error("%s: Cannot create V4L2 output interface for device: %s", __func__, state.v4l2loopback_dev);
@@ -3224,7 +3049,7 @@ int main(int argc, char* argv[])
         //still_encoder_output_port = state.still_encoder_component->output[0];
 
         // disable EXIF
-        mmal_port_parameter_set_boolean(still_encoder_output_port, MMAL_PARAMETER_EXIF_DISABLE, 1);
+        //mmal_port_parameter_set_boolean(still_encoder_output_port, MMAL_PARAMETER_EXIF_DISABLE, 1);
 
         // Now connect the camera to the encoder
         if (state.common_settings.verbose)
