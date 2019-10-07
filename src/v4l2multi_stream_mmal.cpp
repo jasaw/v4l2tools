@@ -396,7 +396,7 @@ static void default_status(MMALCAM_STATE *state)
    state->common_settings.height = 480;
    state->mjpeg_encoding = MMAL_ENCODING_MJPEG;
    state->video_encoding = MMAL_ENCODING_H264;
-   state->mjpeg_bitrate = 2000000;
+   state->mjpeg_bitrate = 800000;
    state->mjpeg_framerate = 5;
    state->bitrate = 2000000;
    state->framerate = VIDEO_FRAME_RATE_NUM;
@@ -2027,35 +2027,20 @@ static MMAL_STATUS_T create_mjpeg_encoder_component(MMALCAM_STATE *state)
    // Only supporting H264 at the moment
    encoder_output->format->encoding = state->mjpeg_encoding;
 
-   if(state->mjpeg_encoding == MMAL_ENCODING_H264)
+   // We are encoding MJPEG at the full video framerate, but dropping the
+   // encoded MJPEG output frames to meet the lower MJPEG framerate, so we need
+   // to adjust the MJPEG bitrate for the full video framerate.
+
+   int64_t internal_mjpeg_bitrate = (int64_t)state->mjpeg_bitrate * state->framerate / state->mjpeg_framerate;
+   if (state->common_settings.verbose)
+      fprintf(stderr, "mjpeg internal bitrate: %lld, output bitrate: %d\n", internal_mjpeg_bitrate, state->mjpeg_bitrate);
+   if(internal_mjpeg_bitrate > MAX_BITRATE_MJPEG)
    {
-      if(state->level == MMAL_VIDEO_LEVEL_H264_4)
-      {
-         if(state->mjpeg_bitrate > MAX_BITRATE_LEVEL4)
-         {
-            fprintf(stderr, "Bitrate too high: Reducing to 25MBit/s\n");
-            state->mjpeg_bitrate = MAX_BITRATE_LEVEL4;
-         }
-      }
-      else
-      {
-         if(state->mjpeg_bitrate > MAX_BITRATE_LEVEL42)
-         {
-            fprintf(stderr, "Bitrate too high: Reducing to 62.5MBit/s\n");
-            state->mjpeg_bitrate = MAX_BITRATE_LEVEL42;
-         }
-      }
-   }
-   else if(state->mjpeg_encoding == MMAL_ENCODING_MJPEG)
-   {
-      if(state->mjpeg_bitrate > MAX_BITRATE_MJPEG)
-      {
-         fprintf(stderr, "Bitrate too high: Reducing to 25MBit/s\n");
-         state->mjpeg_bitrate = MAX_BITRATE_MJPEG;
-      }
+      fprintf(stderr, "mjpeg internal bitrate too high: Reducing to 25MBit/s\n");
+      internal_mjpeg_bitrate = MAX_BITRATE_MJPEG;
    }
 
-   encoder_output->format->bitrate = state->mjpeg_bitrate;
+   encoder_output->format->bitrate = (int)internal_mjpeg_bitrate;
 
    if (state->mjpeg_encoding == MMAL_ENCODING_H264)
       encoder_output->buffer_size = encoder_output->buffer_size_recommended;
