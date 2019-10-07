@@ -2941,6 +2941,12 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
+    if (state.mjpeg_framerate > state.framerate)
+    {
+        state.mjpeg_framerate = state.framerate;
+        fprintf(stderr, "mjpeg framerate cannot exceed video framerate, clipping it to %d fps\n", state.mjpeg_framerate);
+    }
+
     // Setup for sensor specific parameters, only set W/H settings if zero on entry
     get_sensor_defaults(state.common_settings.cameraNum, state.common_settings.camera_name,
                         &state.common_settings.width, &state.common_settings.height);
