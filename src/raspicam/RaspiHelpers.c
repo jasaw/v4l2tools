@@ -39,7 +39,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/mmal_logging.h"
 #include "interface/mmal/util/mmal_default_components.h"
 #include "interface/mmal/mmal_parameters_camera.h"
-#include "interface/mmal/util/mmal_connection.h"
 
 #include "RaspiCLI.h"
 #include "RaspiPreview.h"

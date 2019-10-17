@@ -38,7 +38,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/util/mmal_util_params.h"
 #include "interface/mmal/util/mmal_default_components.h"
-#include "interface/mmal/util/mmal_connection.h"
 
 #include "RaspiCamControl.h"
 #include "RaspiCLI.h"
@@ -88,8 +87,7 @@ static XREF_T awb_map[] =
    {"fluorescent",   MMAL_PARAM_AWBMODE_FLUORESCENT},
    {"incandescent",  MMAL_PARAM_AWBMODE_INCANDESCENT},
    {"flash",         MMAL_PARAM_AWBMODE_FLASH},
-   {"horizon",       MMAL_PARAM_AWBMODE_HORIZON},
-   {"greyworld",     MMAL_PARAM_AWBMODE_GREYWORLD}
+   {"horizon",       MMAL_PARAM_AWBMODE_HORIZON}
 };
 
 static const int awb_map_size = sizeof(awb_map) / sizeof(awb_map[0]);
