@@ -1594,14 +1594,14 @@ int raspicamcontrol_set_annotate(MMAL_COMPONENT_T *camera, const int settings, c
                                  const int text_size, const int text_colour, const int bg_colour,
                                  const unsigned int justify, const unsigned int x, const unsigned int y)
 {
-   MMAL_PARAMETER_CAMERA_ANNOTATE_V4_T annotate =
-   {{MMAL_PARAMETER_ANNOTATE, sizeof(MMAL_PARAMETER_CAMERA_ANNOTATE_V4_T)}};
+   MMAL_PARAMETER_CAMERA_ANNOTATE_V3_T annotate =
+   {{MMAL_PARAMETER_ANNOTATE, sizeof(MMAL_PARAMETER_CAMERA_ANNOTATE_V3_T)}};
 
    if (settings)
    {
       time_t t = time(NULL);
       struct tm tm = *localtime(&t);
-      char tmp[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V4];
+      char tmp[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V3];
       int process_datetime = 1;
 
       annotate.enable = 1;
@@ -1689,10 +1689,6 @@ int raspicamcontrol_set_annotate(MMAL_COMPONENT_T *camera, const int settings, c
       }
       else
          annotate.custom_background_colour = MMAL_FALSE;
-
-      annotate.justify = justify;
-      annotate.x_offset = x;
-      annotate.y_offset = y;
    }
    else
       annotate.enable = 0;
